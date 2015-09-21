@@ -1,0 +1,133 @@
+/*
+Code to simulate a candle flicker on 6 LEDs using the ATTiny85.  Charlieplexing is used to allow for
+controlling more LEDs than there are GPIO pins.  A crude software PWM is implemented to adjust the 
+intensity of the LEDs.  A normal distribution (as opposed to simple random numbers) is used to give the
+flicker a bit more realistic effect (this code is in btc_wolfpup).  Finally, one of the remaining pins
+is connected to a photoresistor to sense movement over the circuit, which makes the LEDs respond to the "wind"
+by flickering more violently for a brief period.
+
+/*
+ * 
+ * *** SOME TIPS ***
+ * 1. Be sure to set the fuses of your ATTiny85.  I am using 8 MHz no clock dividing
+ * -U lfuse:w:0xe2:m -U hfuse:w:0xdf:m -U efuse:w:0xff:m
+ *
+*/ 
+#include <btc_wolfpup.h>
+
+#define _BV(bit) (1 << (bit))
+/*
+ * Using the macro gives a maximum refresh rate of 35.1 khz.
+ * Hardcoding the direction and skipping the redundant register
+ * settings increases the refresh rate to 39.2 khz. Since both
+ * of these are sufficiently fast to avoid undesireable flicker,
+ * I'll stick with the macro approach for the moment.
+ * NOTE: Numbers above were obtained when chip was running at 1MHz.
+ * Now running at 8 MHz and rates are 8x higher as expected.
+*/
+#define CPLEX(b1,b2,dir)     \
+do {                          \
+  DDRB = _BV(b1) | _BV(b2);   \
+  if (dir) {PORTB = _BV(b1);} \
+  else {PORTB = _BV(b2);}     \
+}while(0)                     \
+
+/* 
+ * Defining labels for the LEDs.  Useful if the order of the
+ * LEDS in the project is not the same as in the charlie-
+ * plexing routine.
+*/
+
+#define L1 8
+#define L2 4
+#define L3 32
+#define L4 16
+#define L5 2
+#define L6 1
+
+/* 
+ * Loop CPLEX, executing an LED lighting based on the lbit argument
+ * Drops the refresh rate to 21.3 khz.
+*/
+void cplexloop(int lbit, int stop, int duty)
+{
+  long t;
+  int c=0;
+  t = millis();
+  if(c++%100<duty)
+  do {
+    if( (1<<0) & lbit ) CPLEX(PB0,PB1,1);
+    if( (1<<1) & lbit ) CPLEX(PB0,PB1,0);
+    if( (1<<2) & lbit ) CPLEX(PB0,PB3,1);
+    if( (1<<3) & lbit ) CPLEX(PB0,PB3,0);
+    if( (1<<4) & lbit ) CPLEX(PB1,PB3,1);
+    if( (1<<5) & lbit ) CPLEX(PB1,PB3,0);
+  }while (millis()-t < stop);
+}
+int i=3;
+btc_wolfpup b;
+int plr, clr;
+boolean wind = false;
+unsigned long windtimer = 0;
+float dmu = 0, dsigma = 0;
+const int windlimit = 30;
+
+void setup()
+{
+  plr = analogRead(2); 
+}
+void loop()
+{
+  clr = analogRead(2);
+  if(abs(clr-plr)>windlimit && !wind)
+  {
+    wind = true;
+    windtimer = millis();
+    dmu = -10; dsigma = 10;
+  }
+  if (wind && (millis()-windtimer>1000))
+  {
+    wind = false;
+    dmu = 0; dsigma = 0;
+  }
+  cplexloop(L1, i, (int)b.rescale(b.normalDistribution(0.6+dmu,0.3+dsigma),0,1,0,100));
+  cplexloop(L2, i, (int)b.rescale(b.normalDistribution(0.6,0.3),0,1,0,100));
+  cplexloop(L3, i, (int)b.rescale(b.normalDistribution(0.6+dmu,0.3+dsigma),0,1,0,100));
+  cplexloop(L4, i, (int)b.rescale(b.normalDistribution(0.6,0.3),0,1,0,100));
+  cplexloop(L5, i, (int)b.rescale(b.normalDistribution(0.6+dmu,0.3+dsigma),0,1,0,100));
+  cplexloop(L6, i, (int)b.rescale(b.normalDistribution(0.6,0.3),0,1,0,100));
+  plr = clr;
+
+} 
+
+/* *** CODE CAVE ***
+
+*** Original hardcoding of registers and bits to Charlieplex 6 LEDs with 3 GPIO pins
+  // 01-0
+  DDRB = _BV(PB0)|_BV(PB1);
+  PORTB = _BV(PB0);
+  // 01-1
+  //DDRB = _BV(PB0)|_BV(PB1);
+  PORTB = _BV(PB1);
+  // 03-0
+  DDRB = _BV(PB0)|_BV(PB3);
+  PORTB = _BV(PB0);
+  // 03-3
+  //DDRB = _BV(PB0)|_BV(PB3);
+  PORTB = _BV(PB3);
+  // 13-1
+  DDRB = _BV(PB1)|_BV(PB3);
+  PORTB = _BV(PB1);
+  // 13-3
+  //DDRB = _BV(PB1)|_BV(PB3);
+  PORTB = _BV(PB3);
+
+  // Manual charlieplexing with macro
+  CPLEX(PB0,PB1,1);
+  CPLEX(PB0,PB1,0);
+  CPLEX(PB0,PB3,1);
+  CPLEX(PB0,PB3,0);
+  CPLEX(PB1,PB3,1);
+  CPLEX(PB1,PB3,0);
+*/
+
