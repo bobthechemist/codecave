@@ -3,23 +3,23 @@ Combines all files in a project directory into one markdown file.
 I find this a useful way to pull a project together into one document for submitting to a LLM for Agentic refactoring and such.
 '''
 import os
-import re
 import sys
-
 from collections import defaultdict
+import pathspec
 
-def get_gitignore_patterns(gitignore_path):
-    """Reads and parses a .gitignore file."""
+def get_ignore_spec(gitignore_path):
+    """
+    Parses a .gitignore file and returns a pathspec.PathSpec object.
+    """
     patterns = []
     if os.path.exists(gitignore_path):
         with open(gitignore_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    # Convert gitignore pattern to regex
-                    regex_pattern = line.replace('.', r'\.').replace('*', '.*')
-                    patterns.append(re.compile(regex_pattern))
-    return patterns
+            patterns = f.readlines()
+    
+    # Add common patterns to always ignore
+    patterns.extend(['.git/', 'all-in-one.md'])
+    
+    return pathspec.PathSpec.from_lines('gitwildmatch', patterns)
 
 def is_ignored(path, gitignore_patterns):
     """Checks if a file or directory should be ignored."""
@@ -62,37 +62,54 @@ def combine_files_to_markdown(project_dir, output_file='all-in-one.md'):
     respecting .gitignore, with proper directory headings and syntax highlighting.
     """
     gitignore_path = os.path.join(project_dir, '.gitignore')
-    gitignore_patterns = get_gitignore_patterns(gitignore_path)
+    # Use the new function to get a spec object
+    spec = get_ignore_spec(gitignore_path)
     
     project_files = defaultdict(list)
 
     for root, dirs, files in os.walk(project_dir, topdown=True):
-        # Exclude .git directory
-        if '.git' in dirs:
-            dirs.remove('.git')
+        # Create full paths relative to the project_dir for matching
+        # pathspec works with relative paths from where .gitignore is
+        rel_root = os.path.relpath(root, project_dir)
+        if rel_root == '.':
+            rel_root = '' # Handle the root directory itself
 
-        # Filter ignored directories
-        dirs[:] = [d for d in dirs if not is_ignored(os.path.join(root, d), gitignore_patterns)]
+        # Get full relative paths for all directories and files
+        dir_paths = [os.path.join(rel_root, d) for d in dirs]
+        file_paths = [os.path.join(rel_root, f) for f in files]
+
+        # Use the spec to filter ignored paths
+        # Note: pathspec needs paths to have a trailing / for directories
+        ignored_dirs = set(spec.match_files([d + '/' for d in dir_paths]))
+        ignored_files = set(spec.match_files(file_paths))
+
+        # The 'dirs' list is modified in-place to prevent os.walk from descending further
+        dirs[:] = [d for d in dirs if os.path.join(rel_root, d) + '/' not in ignored_dirs]
         
         for file in files:
-            file_path = os.path.join(root, file)
-            if not is_ignored(file_path, gitignore_patterns) and file != output_file:
-                relative_dir = os.path.relpath(root, project_dir)
-                project_files[relative_dir].append(file)
+            file_path_rel = os.path.join(rel_root, file)
+            if file_path_rel not in ignored_files:
+                project_files[rel_root].append(file)
                 
     with open(output_file, 'w') as outfile:
-        for directory in sorted(project_files.keys()):
-            outfile.write(f"## {directory}\n\n")
+        # Sort directories, placing the root directory ('' or '.') first.
+        sorted_dirs = sorted(project_files.keys(), key=lambda x: (x != '', x))
+
+        for directory in sorted_dirs:
+            # Use '.' for the root directory heading for clarity
+            display_dir = directory if directory else '.'
+            outfile.write(f"## Directory: `{display_dir}/`\n\n")
+
             for file in sorted(project_files[directory]):
-                file_path = os.path.join(project_dir, directory, file)
+                full_path = os.path.join(project_dir, directory, file)
                 _, file_extension = os.path.splitext(file)
                 language = get_language_from_extension(file_extension)
                 
-                outfile.write(f"### {file}\n\n")
+                outfile.write(f"### `{file}`\n\n")
                 outfile.write(f"```{language}\n")
 
                 try:
-                    with open(file_path, 'r', errors='ignore') as infile:
+                    with open(full_path, 'r', errors='ignore') as infile:
                         outfile.write(infile.read())
                 except Exception as e:
                     outfile.write(f"Error reading file: {e}")
