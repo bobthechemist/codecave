@@ -49,6 +49,7 @@
 * When ready, checkout main `git checkout main` and make sure it is up to date `git pull origin main`
 * Branches are to be squashed and merged into main but the commit messages need to be preserved
 * **First** squash with `git merge --squash <branch-name>`
-* **Second** Issue `git commit` without the `-m` which will make git automatically pull all the individual changes from the squashed branch. Edit if necessary (probably not).
+* **Second** Issue `git commit` without the `-m` which will make git automatically pull all the individual changes from the squashed branch. Edit title to indicate something more useful than "Squashed ..." then save.
+* Once squashed, the branch can be safely deleted, but will probably require capital D `git branch -D <branch-name>`
 
 
