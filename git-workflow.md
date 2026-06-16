@@ -43,4 +43,12 @@
 * **Scope** identifies the subsystem that is being worked on in this commit
 * Remember to use the imperative in the description
 
+# Current (June 2026) branching and commit strategy
+
+* Don't work on main, create a branch. This branch can (and probably should) remain local unless it will be worked on at multiple computers.
+* When ready, checkout main `git checkout main` and make sure it is up to date `git pull origin main`
+* Branches are to be squashed and merged into main but the commit messages need to be preserved
+* **First** squash with `git merge --squash <branch-name>`
+* **Second** Issue `git commit` without the `-m` which will make git automatically pull all the individual changes from the squashed branch. Edit if necessary (probably not).
+
 
